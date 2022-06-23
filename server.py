@@ -2,33 +2,47 @@ import socket
 import threading
 import tools
 import commands
+import settings
 
 SERVER=socket.gethostbyname('localhost')
-PORT = 5050
-ADDR = (SERVER, PORT)
-
+ADDR = (SERVER, settings.PORT)
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
 
-def handle_client(usersManager, conn, addr):
-    print("[NEW CONNECTION]", addr, " connected. Waiting validation ...")
+def handle_client(chatManager, conn, addr):
+    print("[NEW CONNECTION]", addr, " connected.")
     user = tools.User(conn, addr)
     connected = True
-    
+
+    while connected:
+        bytes_to_read = user.recieve(settings.HEADER, False)
+        if bytes_to_read == 0:
+            continue
+        
+        print("[USER", addr, "] has sent", bytes_to_read, " bytes")
+
+        command = user.recieve(bytes_to_read, decode=True)
+
+        try:
+            chatManager.exec_command(user, command)
+        except (tools.InvalidUsernameException, tools.DisconnectedException):
+            print("[USER", addr, "] DISCONNECTED")
+            connected = False
             
-
-
-
+    conn.close()
 
 
 def start():
     server.listen()
     while True:
         conn, addr = server.accept()
-        thread = threading.Thread(start=handle_client, args=(usersManager, conn, addr))
+        thread = threading.Thread(target=handle_client, args=(chatManager, conn, addr))
+        thread.start()
 
-usersManager = tools.UsersManager()
+
+chatManager = tools.ChatManager(3)
 print("[STARTING] server is starting ...")
-start(server)
+start()
 
+server.close()

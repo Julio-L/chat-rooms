@@ -1,6 +1,10 @@
 import commands
+import settings
 
 class InvalidUsernameException(Exception):
+    pass
+
+class DisconnectedException(Exception):
     pass
 
 class Room:
@@ -21,10 +25,10 @@ class User:
         return self.valid
     
     def recieve(self,bytes_to_read, decode=False):
-        if decode:
-            return self.conn.recieve(bytes_to_read)
+        if not decode:
+            return int.from_bytes(self.conn.recv(bytes_to_read), "little")
 
-        return self.conn.recieve(bytes_to_read).decode(commands.FORMAT)
+        return self.conn.recv(bytes_to_read).decode(settings.FORMAT)
 
 
 class UsersManager:
@@ -34,8 +38,15 @@ class UsersManager:
     def isvalidname(self, name):
         return name not in self.registered_names
 
-class ChatState:
+class ChatManager:
     def __init__(self, total_rooms):
         self.usersManager = UsersManager()
         self.rooms = {room_number:Room() for room_number in range(total_rooms)}
-        
+    def exec_command(self, user, command):
+        # if not user.valid:
+        #     raise InvalidUsernameException
+        if command.startswith(commands.CHAT):
+            print("[USER", user.addr, "]" + command)
+        elif command.startswith(commands.DISCONNECT):
+            raise DisconnectedException
+

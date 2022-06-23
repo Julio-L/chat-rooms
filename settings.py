@@ -1,0 +1,3 @@
+HEADER = 8
+FORMAT = "UTF-8"
+PORT = 5050
