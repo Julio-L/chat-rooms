@@ -23,6 +23,12 @@ class User:
             self.valid = True
         
         return self.valid
+
+    def send(self, msg):
+        bytes_to_send = len(msg) 
+        self.conn.send(bytes_to_send.to_bytes(8, "little"))
+        self.conn.send(msg.encode(settings.FORMAT))
+
     
     def recieve(self,bytes_to_read, decode=False):
         if not decode:
@@ -36,7 +42,11 @@ class UsersManager:
         self.registered_users = {}
 
     def isvalidname(self, name):
-        return name not in self.registered_names
+        self.valid = name not in self.registered_names
+        return self.valid
+    
+    def addUser(self, name, user):
+        self.registered_users[name] = user
 
 class ChatManager:
     def __init__(self, total_rooms):
@@ -49,4 +59,14 @@ class ChatManager:
             print("[USER", user.addr, "]" + command)
         elif command.startswith(commands.DISCONNECT):
             raise DisconnectedException
+        elif command.startwith(commands.VALIDATE_USERNAME):
+            username = command[len(commands.VALIDATE_USERNAME)+1:]
+            user.username = username
+            valid = user.validate(self.usersManager)
+            if valid:
+                user.send(commands.VALID_USERNAME)
+            else:
+                user.send(commands.INVALID_USERNAME)
+                raise InvalidUsernameException
+
 

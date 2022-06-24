@@ -2,6 +2,9 @@ from PyQt5.QtWidgets import QApplication, QGridLayout, QStackedWidget, QWidget, 
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
 from enum import Enum
+from threading import Thread
+import socket
+import settings
 
 class Window(Enum):
     INIT = 0
@@ -11,23 +14,41 @@ class Window(Enum):
 class ChatState(QStackedWidget):
     def __init__(self):
         super().__init__()
-        self.init_window = InitWindow()
+        self.init_window = InitWindow(self.onConnect)
         self.menu_window = MenuWindow()
         self.addWidget(self.init_window)
         self.addWidget(self.menu_window)
+        self.user = UserManager()
     
+    def onConnect(self):        
+        SERVER = socket.gethostbyname('localhost')
+        ADDR = (SERVER, settings.PORT)
+
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect(ADDR)
+
+        self.recieve = Thread(target=ChatState.clientRecieve, args=(self, client))
+        self.recieve.start()
+        self.recieve.join()
+        client.close()
+
+
+    def clientSend(self):
+        pass
+    
+    def clientRecieve(chat_state, client):
+        pass
+
     def switchToMenu(self):
         self.setCurrentIndex(Window.MENU.value)
         
 
-
-
-
 class InitWindow(QWidget):
-    def __init__(self):
+    def __init__(self, onConnect):
         super().__init__()
+        self.onConnect=onConnect
         self.initUI()
-    
+
     def initUI(self):
         self.layout = QVBoxLayout(self)
         self.label = QLabel("Username: ")
@@ -41,6 +62,7 @@ class InitWindow(QWidget):
         self.input_section.setFixedWidth(420)
         
         self.connect_button = QPushButton("Connect")
+        self.connect_button.clicked.connect(self.onConnect)
         self.connect_button.setFixedWidth(100)
         self.user_input.setFixedWidth(200)
         self.input_layout.addWidget(self.connect_button)
@@ -73,8 +95,19 @@ class InitWindow(QWidget):
         self.setFixedWidth(700)
 
 
+
+
 class MenuWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.layout = QGridLayout(self)
+
+
+class ChatWindow(QWidget):
+    pass
     
+
+class UserManager:
+    def __init__(self, name="", client=None):
+        pass
+

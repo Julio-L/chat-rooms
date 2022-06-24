@@ -4,8 +4,6 @@ from client import ChatState
 app = QApplication([])
 
 chat_state = ChatState()
-chat_state.switchToMenu()
-
 chat_state.show()
 
 app.exec()
