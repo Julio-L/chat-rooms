@@ -3,7 +3,8 @@ import settings
 import errors
 
 class Room:
-    pass
+    def __init__(self, name_id):
+        self.name_id = name_id
 
 class User:
     def __init__(self, conn, addr, username=""):
@@ -40,26 +41,40 @@ class UsersManager:
         self.valid = name not in self.registered_users
         return self.valid
     
-    def addUser(self, name, user):
-        self.registered_users[name] = user
+    def addUser(self, user):
+        self.registered_users[user.username] = user
+    
+    def removeUser(self, user):
+        self.registered_users.pop(user.username, None)
+
+class RoomsManager:
+    def __init__(self, init_room_count):
+        self.rooms = {str(room_number):Room(str(room_number)) for room_number in range(init_room_count)}
+
+    def comma_sep_room_names(self):
+        return ",".join(self.rooms)
 
 class ChatManager:
     def __init__(self, total_rooms):
         self.usersManager = UsersManager()
-        self.rooms = {room_number:Room() for room_number in range(total_rooms)}
+        self.roomsManager = RoomsManager(total_rooms)
+        
     def exec_command(self, user, command):
         # if not user.valid:
         #     raise InvalidUsernameException
         if command.startswith(commands.CHAT):
             print("[USER", user.addr, "]" + command)
         elif command.startswith(commands.DISCONNECT):
+            self.usersManager.removeUser(user)
             raise errors.DisconnectedException
         elif command.startswith(commands.VALIDATE_USERNAME):
             username = command[len(commands.VALIDATE_USERNAME)+1:]
             user.username = username
             valid = user.validate(self.usersManager)
             if valid:
+                self.usersManager.addUser(user)
                 user.send(commands.VALID_USERNAME)
+                user.send(commands.SEND_ROOMS + " " + self.roomsManager.comma_sep_room_names())
             else:
                 user.send(commands.INVALID_USERNAME)
                 raise errors.InvalidUsernameException

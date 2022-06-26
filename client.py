@@ -1,6 +1,7 @@
+from ctypes import alignment
 from pickle import encode_long
-from PyQt5.QtWidgets import QApplication, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit
-from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QApplication, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit
+from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from enum import Enum
 from threading import Thread
@@ -16,6 +17,7 @@ class Window(Enum):
 
 class Worker(QThread):
     switch_to_menu = pyqtSignal()
+    update_rooms = pyqtSignal(str)
     def __init__(self, conn, addr, user):
         super().__init__()
         
@@ -25,8 +27,6 @@ class Worker(QThread):
 
     def run(self):
         connected=True
-        
-
         #Check is username is valid
         self.user.sendMessage(commands.VALIDATE_USERNAME + " " + self.user.name)
 
@@ -46,6 +46,12 @@ class Worker(QThread):
             elif msg.startswith(commands.VALID_USERNAME):
                 self.user.validated = True
                 self.switch_to_menu.emit()
+            elif msg.startswith(commands.SEND_ROOMS):
+                room_names = msg[len(commands.SEND_ROOMS)+1:]
+                self.update_rooms.emit(room_names)
+
+
+            
         self.conn.close()
                 
 
@@ -58,6 +64,7 @@ class ChatState(QStackedWidget):
         self.menu_window = MenuWindow(self)
         self.addWidget(self.init_window)
         self.addWidget(self.menu_window)
+        self.setGeometry(290, 110, 900, 750)
 
     def closeEvent(self, event):
         if self.user.conn:
@@ -78,7 +85,11 @@ class ChatState(QStackedWidget):
 
         self.connection = Worker(client, ADDR, self.user)
         self.connection.switch_to_menu.connect(self.switch_to_menu)
+        self.connection.update_rooms.connect(self.update_rooms)
         self.connection.start()
+
+    def update_rooms(self, rooms):
+        self.menu_window.update_rooms(rooms.split(","))
 
     def switch_to_menu(self):
         self.switchTo(Window.MENU.value)
@@ -89,6 +100,7 @@ class ChatState(QStackedWidget):
         
 
     def switchTo(self, window):
+        self.widget(window).prep()
         self.setCurrentIndex(window)
         
 
@@ -98,7 +110,14 @@ class InitWindow(QWidget):
         self.onConnect=onConnect
         self.initUI()
 
+    def prep(self):
+        pass
+
     def initUI(self):
+        self.setAutoFillBackground(True)
+        p = self.palette()
+        p.setColor(self.backgroundRole(), Qt.black)
+        self.setPalette(p)
         self.layout = QVBoxLayout(self)
         self.label = QLabel("Username: ")
         self.user_input = QLineEdit()
@@ -140,19 +159,109 @@ class InitWindow(QWidget):
         self.layout.setSpacing(50)
         self.layout.setAlignment(Qt.AlignCenter)
 
-        self.setFixedHeight(700)
-        self.setFixedWidth(700)
+
+class RoomDisplay(QScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.rooms = set()
+        self.initUI()
+        
+    
+    def initUI(self):
+        self.widget = QWidget()
+        self.layout = QVBoxLayout(self.widget)
+        self.setWidgetResizable(True)
+        self.widget.setAutoFillBackground(True)
+        p = self.widget.palette()
+        p.setColor(self.backgroundRole(), QColor.fromRgb(32, 32, 32))
+        self.widget.setPalette(p)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.layout.setSpacing(10)
+        self.layout.setAlignment(Qt.AlignTop)
+        self.setWidget(self.widget)
 
 
+    def update_rooms(self, rooms):
+        room_cards = RoomFactory.buildRooms(rooms)
+        for i, card in enumerate(room_cards):
+            self.layout.addWidget(card)
+
+
+class RoomCard(QWidget):
+    def __init__(self, room_name, color):
+        super().__init__()
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(20, 20, 20, 20)
+        self.label = QLabel("ROOM: " + room_name)
+        self.layout.setAlignment(Qt.AlignTop|Qt.AlignLeft)
+        self.layout.addWidget(self.label)
+        self.setColor(color)
+
+    def setColor(self, color):
+        self.setAutoFillBackground(True)
+        p = self.palette()
+        p.setColor(self.backgroundRole(), color)
+        self.setPalette(p)
+
+
+class RoomFactory:
+    @staticmethod
+    def buildRooms(rooms):
+        res = []
+        color = [QColor(128, 128, 128), QColor(160, 160, 160)]
+        pos = 0
+        for room in rooms:
+            res.append(RoomCard(room, color[pos]))
+            pos = (pos+1)%2
+        return res
+
+
+
+class RoomButtons(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+    
+    def initUI(self):
+        self.layout = QHBoxLayout(self)
+        self.connect_btn = QPushButton("Connect")
+        self.create_room_btn = QPushButton("Create Room")
+        self.layout.addWidget(self.connect_btn)
+        self.layout.addWidget(self.create_room_btn)
 
 
 class MenuWindow(QWidget):
     def __init__(self, chat_state):
         super().__init__()
-        self.layout = QGridLayout(self)
         self.chat_state = chat_state
-        self.info = QLabel("Connected with username: " + self.chat_state.user.name)
+        self.layout = QGridLayout(self)
+        self.room_controls = RoomButtons()
+        self.rooms_display = RoomDisplay()
+        
+        self.initUI()
+    def initUI(self):
+        self.layout.setContentsMargins(40, 40, 40, 40)
+        self.info = QLabel()
         self.layout.addWidget(self.info, 0, 0)
+        self.layout.addWidget(self.rooms_display, 1, 0)
+        self.layout.addWidget(self.room_controls, 2, 0)
+
+        self.layout.setRowStretch(0, 0)
+        self.layout.setRowStretch(1, 5)
+        self.layout.setColumnStretch(0, 10)
+
+        self.setAutoFillBackground(True)
+        p = self.palette()
+        p.setColor(self.backgroundRole(), Qt.black)
+        self.setPalette(p)
+    
+    def update_rooms(self, rooms):
+        self.rooms_display.update_rooms(rooms)
+
+
+    
+    def prep(self):
+        self.info.setText("Connected with username: " + self.chat_state.user.name)
 
 class ChatWindow(QWidget):
     pass
