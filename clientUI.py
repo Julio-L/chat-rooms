@@ -7,3 +7,4 @@ chat_state = ChatState()
 chat_state.show()
 
 app.exec()
+

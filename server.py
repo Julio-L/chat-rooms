@@ -3,6 +3,7 @@ import threading
 import tools
 import commands
 import settings
+import errors
 
 SERVER=socket.gethostbyname('localhost')
 ADDR = (SERVER, settings.PORT)
@@ -26,11 +27,10 @@ def handle_client(chatManager, conn, addr):
 
         try:
             chatManager.exec_command(user, command)
-        except (tools.InvalidUsernameException, tools.DisconnectedException):
+        except (errors.InvalidUsernameException, errors.DisconnectedException):
             print("[USER", addr, "] DISCONNECTED")
             connected = False
             
-    conn.close()
 
 
 def start():

@@ -1,11 +1,6 @@
 import commands
 import settings
-
-class InvalidUsernameException(Exception):
-    pass
-
-class DisconnectedException(Exception):
-    pass
+import errors
 
 class Room:
     pass
@@ -42,7 +37,7 @@ class UsersManager:
         self.registered_users = {}
 
     def isvalidname(self, name):
-        self.valid = name not in self.registered_names
+        self.valid = name not in self.registered_users
         return self.valid
     
     def addUser(self, name, user):
@@ -58,8 +53,8 @@ class ChatManager:
         if command.startswith(commands.CHAT):
             print("[USER", user.addr, "]" + command)
         elif command.startswith(commands.DISCONNECT):
-            raise DisconnectedException
-        elif command.startwith(commands.VALIDATE_USERNAME):
+            raise errors.DisconnectedException
+        elif command.startswith(commands.VALIDATE_USERNAME):
             username = command[len(commands.VALIDATE_USERNAME)+1:]
             user.username = username
             valid = user.validate(self.usersManager)
@@ -67,6 +62,6 @@ class ChatManager:
                 user.send(commands.VALID_USERNAME)
             else:
                 user.send(commands.INVALID_USERNAME)
-                raise InvalidUsernameException
+                raise errors.InvalidUsernameException
 
 

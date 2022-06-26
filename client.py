@@ -1,24 +1,67 @@
+from pickle import encode_long
 from PyQt5.QtWidgets import QApplication, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit
 from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from enum import Enum
 from threading import Thread
 import socket
 import settings
+import errors
+import commands
 
 class Window(Enum):
     INIT = 0
     MENU = 1
     ROOM = 2
 
+class Worker(QThread):
+    switch_to_menu = pyqtSignal()
+    def __init__(self, conn, addr, user):
+        super().__init__()
+        
+        self.conn = conn
+        self.addr = addr
+        self.user = user
+
+    def run(self):
+        connected=True
+        
+
+        #Check is username is valid
+        self.user.sendMessage(commands.VALIDATE_USERNAME + " " + self.user.name)
+
+        while connected:
+            try:
+                bytes_to_read = self.user.recieve(settings.HEADER, False)
+            except(errors.ConnectionLostException):
+                connected = False
+                continue
+            if bytes_to_read == 0:
+                continue
+
+            msg = self.user.recieve(bytes_to_read, True)
+            print("BYTES TO READ", bytes_to_read)
+            if msg.startswith(commands.INVALID_USERNAME):
+                connected = False
+            elif msg.startswith(commands.VALID_USERNAME):
+                self.user.validated = True
+                self.switch_to_menu.emit()
+        self.conn.close()
+                
+
+
 class ChatState(QStackedWidget):
     def __init__(self):
         super().__init__()
+        self.user = User()
         self.init_window = InitWindow(self.onConnect)
-        self.menu_window = MenuWindow()
+        self.menu_window = MenuWindow(self)
         self.addWidget(self.init_window)
         self.addWidget(self.menu_window)
-        self.user = UserManager()
+
+    def closeEvent(self, event):
+        if self.user.conn:
+            self.user.sendMessage(commands.DISCONNECT)
     
     def onConnect(self):        
         SERVER = socket.gethostbyname('localhost')
@@ -27,20 +70,26 @@ class ChatState(QStackedWidget):
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect(ADDR)
 
-        self.recieve = Thread(target=ChatState.clientRecieve, args=(self, client))
-        self.recieve.start()
-        self.recieve.join()
-        client.close()
+        username = self.init_window.user_input.text()
+        self.user.name = username
+
+        self.user.conn = client
+        self.user.addr = ADDR
+
+        self.connection = Worker(client, ADDR, self.user)
+        self.connection.switch_to_menu.connect(self.switch_to_menu)
+        self.connection.start()
+
+    def switch_to_menu(self):
+        self.switchTo(Window.MENU.value)
 
 
-    def clientSend(self):
-        pass
-    
-    def clientRecieve(chat_state, client):
-        pass
+    def clientSend(self, msg):
+        self.user.send(msg)
+        
 
-    def switchToMenu(self):
-        self.setCurrentIndex(Window.MENU.value)
+    def switchTo(self, window):
+        self.setCurrentIndex(window)
         
 
 class InitWindow(QWidget):
@@ -98,16 +147,39 @@ class InitWindow(QWidget):
 
 
 class MenuWindow(QWidget):
-    def __init__(self):
+    def __init__(self, chat_state):
         super().__init__()
         self.layout = QGridLayout(self)
-
+        self.chat_state = chat_state
+        self.info = QLabel("Connected with username: " + self.chat_state.user.name)
+        self.layout.addWidget(self.info, 0, 0)
 
 class ChatWindow(QWidget):
     pass
     
 
-class UserManager:
-    def __init__(self, name="", client=None):
-        pass
+class User:
+    def __init__(self, name="", conn=None, addr=None):
+        self.name = name
+        self.conn = conn
+        self.addr = addr
+        self.validated = False
+    
+    def recieve(self, bytes_to_read, decode=False):
+        try:
+            if decode:
+                return self.conn.recv(bytes_to_read).decode(settings.FORMAT)
+            
+            return int.from_bytes(self.conn.recv(bytes_to_read), "little")
+        except: 
+            raise errors.ConnectionLostException
+
+    
+    def sendMessage(self, msg):
+        bytes_to_send = len(msg)
+        self.conn.send(bytes_to_send.to_bytes(8, "little"))
+        self.conn.send(msg.encode(settings.FORMAT))
+    
+
+
 
