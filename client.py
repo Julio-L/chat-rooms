@@ -1,6 +1,6 @@
 from ctypes import alignment
 from pickle import encode_long
-from PyQt5.QtWidgets import QApplication, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit
+from PyQt5.QtWidgets import QApplication, QFrame, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from enum import Enum
@@ -20,38 +20,39 @@ class Worker(QThread):
     update_rooms = pyqtSignal(str)
     def __init__(self, conn, addr, user):
         super().__init__()
-        
         self.conn = conn
         self.addr = addr
         self.user = user
 
     def run(self):
         connected=True
-        #Check is username is valid
-        self.user.sendMessage(commands.VALIDATE_USERNAME + " " + self.user.name)
 
+        #Validate Username from server
+        self.user.sendMessage(commands.VALIDATE_USERNAME + " " + self.user.name)
         while connected:
             try:
                 bytes_to_read = self.user.recieve(settings.HEADER, False)
+                if bytes_to_read == 0:
+                    raise errors.ConnectionLostException
+
             except(errors.ConnectionLostException):
                 connected = False
                 continue
-            if bytes_to_read == 0:
-                continue
 
             msg = self.user.recieve(bytes_to_read, True)
-            print("BYTES TO READ", bytes_to_read)
+
             if msg.startswith(commands.INVALID_USERNAME):
                 connected = False
+                print("[USER", self.addr, "] USERNAME VALIDATION FAILED.")
             elif msg.startswith(commands.VALID_USERNAME):
                 self.user.validated = True
                 self.switch_to_menu.emit()
+                print("[USER", self.addr, "] USERNAME VALIDATION SUCCEEDED.")
             elif msg.startswith(commands.SEND_ROOMS):
                 room_names = msg[len(commands.SEND_ROOMS)+1:]
                 self.update_rooms.emit(room_names)
 
-
-            
+        print("[USER", self.addr, "] CONNECTION CLOSED.")
         self.conn.close()
                 
 
@@ -64,7 +65,7 @@ class ChatState(QStackedWidget):
         self.menu_window = MenuWindow(self)
         self.addWidget(self.init_window)
         self.addWidget(self.menu_window)
-        self.setGeometry(290, 110, 900, 750)
+        self.setGeometry(100, 110, settings.WINDOWWIDTH, settings.WINDOWHEIGHT)
 
     def closeEvent(self, event):
         if self.user.conn:
@@ -89,9 +90,11 @@ class ChatState(QStackedWidget):
         self.connection.start()
 
     def update_rooms(self, rooms):
+        print("[CLIENT-GUI] UPDATING ROOMS ...")
         self.menu_window.update_rooms(rooms.split(","))
 
     def switch_to_menu(self):
+        print("[CLIENT-GUI] SWITCHING TO MENU ...")
         self.switchTo(Window.MENU.value)
 
 
@@ -168,7 +171,8 @@ class RoomDisplay(QScrollArea):
         
     
     def initUI(self):
-        self.widget = QWidget()
+        self.widget = QFrame()
+        self.widget.setStyleSheet('''border: 3px solid white; border-radius: 10px''')
         self.layout = QVBoxLayout(self.widget)
         self.setWidgetResizable(True)
         self.widget.setAutoFillBackground(True)
@@ -187,12 +191,14 @@ class RoomDisplay(QScrollArea):
             self.layout.addWidget(card)
 
 
-class RoomCard(QWidget):
+class RoomCard(QFrame):
     def __init__(self, room_name, color):
         super().__init__()
         self.layout = QHBoxLayout(self)
+        self.setStyleSheet('''border: 3px solid grey; border-radius: 10px''')
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.label = QLabel("ROOM: " + room_name)
+        self.label.setStyleSheet('''border:None; font-size: 18px''')
         self.layout.setAlignment(Qt.AlignTop|Qt.AlignLeft)
         self.layout.addWidget(self.label)
         self.setColor(color)
@@ -229,6 +235,22 @@ class RoomButtons(QWidget):
         self.layout.addWidget(self.connect_btn)
         self.layout.addWidget(self.create_room_btn)
 
+class UsersOnline(QScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+    def initUI(self):
+        self.setWidgetResizable(True)
+        self.widget = QFrame()
+        self.widget.setStyleSheet('''background-color: rgb(0, 0, 0); border: 3px solid white; border-radius: 10px;''')
+        self.label = QLabel("Users Online")
+        self.label.setStyleSheet('''border:None; color:white''')
+        self.layout = QVBoxLayout(self.widget)
+        self.layout.setAlignment(Qt.AlignCenter | Qt.AlignTop)
+        self.layout.addWidget(self.label)
+
+        self.setWidget(self.widget)
+
 
 class MenuWindow(QWidget):
     def __init__(self, chat_state):
@@ -237,18 +259,26 @@ class MenuWindow(QWidget):
         self.layout = QGridLayout(self)
         self.room_controls = RoomButtons()
         self.rooms_display = RoomDisplay()
+        self.users_online = UsersOnline()
         
         self.initUI()
     def initUI(self):
-        self.layout.setContentsMargins(40, 40, 40, 40)
-        self.info = QLabel()
-        self.layout.addWidget(self.info, 0, 0)
-        self.layout.addWidget(self.rooms_display, 1, 0)
-        self.layout.addWidget(self.room_controls, 2, 0)
 
-        self.layout.setRowStretch(0, 0)
-        self.layout.setRowStretch(1, 5)
-        self.layout.setColumnStretch(0, 10)
+        self.layout.setContentsMargins(40, 40, 40, 40)
+        self.heading= QLabel("[Rooms]")
+        self.heading.setStyleSheet('''border:None; font-size: 32px''')
+
+        self.layout.addWidget(self.heading, 0, 2, 1, 1)
+        self.layout.addWidget(self.rooms_display, 1, 0, 4, 4)
+        self.layout.addWidget(self.room_controls, 6, 0, 1, 4)
+        self.layout.addWidget(self.users_online, 1, 6, 4, 2)
+
+
+        # self.layout.setColumnStretch(6, 5)
+        # self.layout.setRowStretch(1, 5)
+        # self.layout.setColumnStretch(0, 10)
+        # self.layout.setColumnStretch(3, 8)
+
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -261,7 +291,8 @@ class MenuWindow(QWidget):
 
     
     def prep(self):
-        self.info.setText("Connected with username: " + self.chat_state.user.name)
+        pass
+        # self.info.setText("Connected with username: " + self.chat_state.user.name)
 
 class ChatWindow(QWidget):
     pass
@@ -277,17 +308,25 @@ class User:
     def recieve(self, bytes_to_read, decode=False):
         try:
             if decode:
-                return self.conn.recv(bytes_to_read).decode(settings.FORMAT)
+                res = self.conn.recv(bytes_to_read).decode(settings.FORMAT)
+                print("[USER", self.addr, "] Recieved message: '", res, "' from server.")
+                return res
             
-            return int.from_bytes(self.conn.recv(bytes_to_read), "little")
+            res = int.from_bytes(self.conn.recv(bytes_to_read), "little")
+            print("[USER", self.addr, "] Recieved a header of '", res, "' bytes from the server.")
+
+            return res
         except: 
+            print("[USER", self.addr, "] Has lost connection to the server")
             raise errors.ConnectionLostException
 
     
     def sendMessage(self, msg):
         bytes_to_send = len(msg)
         self.conn.send(bytes_to_send.to_bytes(8, "little"))
+        print("[USER", self.addr, "] Has sent '", bytes_to_send, "' bytes as a header to the server.")
         self.conn.send(msg.encode(settings.FORMAT))
+        print("[USER", self.addr, "] Has sent '", msg, "' to the server.")
     
 
 

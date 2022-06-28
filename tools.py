@@ -15,6 +15,7 @@ class User:
         self.room = None
     
     def validate(self, usersManager):
+        print("[SERVER] VALIDATING USER", self.addr)
         if usersManager.isvalidname(self.username):
             self.valid = True
         
@@ -23,14 +24,21 @@ class User:
     def send(self, msg):
         bytes_to_send = len(msg) 
         self.conn.send(bytes_to_send.to_bytes(8, "little"))
+        print("[SERVER -> USER:'", self.addr, "'] HAS SENT '", bytes_to_send, "' BYTES AS A HEADER.")
         self.conn.send(msg.encode(settings.FORMAT))
-
+        print("[SERVER -> USER:'", self.addr, "'] HAS SENT '", msg, "'.")
+    
     
     def recieve(self,bytes_to_read, decode=False):
         if not decode:
-            return int.from_bytes(self.conn.recv(bytes_to_read), "little")
+            print("[USER:'",self.addr   ,"' -> SERVER] RECIEVED '", bytes_to_read,"' BYTES AS A HEADER." )
+            res = int.from_bytes(self.conn.recv(bytes_to_read), "little")
+            return res
 
-        return self.conn.recv(bytes_to_read).decode(settings.FORMAT)
+        res = self.conn.recv(bytes_to_read).decode(settings.FORMAT)
+        print("[USER:'",self.addr   ,"' -> SERVER] RECIEVED A MESSAGE '", res ,"'." )
+
+        return res
 
 
 class UsersManager:
@@ -63,7 +71,7 @@ class ChatManager:
         # if not user.valid:
         #     raise InvalidUsernameException
         if command.startswith(commands.CHAT):
-            print("[USER", user.addr, "]" + command)
+            pass
         elif command.startswith(commands.DISCONNECT):
             self.usersManager.removeUser(user)
             raise errors.DisconnectedException
@@ -72,10 +80,12 @@ class ChatManager:
             user.username = username
             valid = user.validate(self.usersManager)
             if valid:
+                print("[SERVER] VALIDATION SUCCESSFUL FOR USER", user.addr)
                 self.usersManager.addUser(user)
                 user.send(commands.VALID_USERNAME)
                 user.send(commands.SEND_ROOMS + " " + self.roomsManager.comma_sep_room_names())
             else:
+                print("[SERVER] VALIDATION UNSUCCESSFUL FOR USER", user.addr)
                 user.send(commands.INVALID_USERNAME)
                 raise errors.InvalidUsernameException
 

@@ -26,9 +26,10 @@ def handle_client(chatManager, conn, addr):
         command = user.recieve(bytes_to_read, decode=True)
 
         try:
+            print("[SERVER] EXECUTING COMMANS: '", command, "' FOR USER", user.addr)
             chatManager.exec_command(user, command)
         except (errors.InvalidUsernameException, errors.DisconnectedException):
-            print("[USER", addr, "] DISCONNECTED")
+            print("[USER", addr, "] DISCONNECTED.")
             connected = False
             
 
