@@ -1,3 +1,4 @@
+from re import L
 import commands
 import settings
 import errors
@@ -5,6 +6,24 @@ import errors
 class Room:
     def __init__(self, name_id):
         self.name_id = name_id
+        self.users = {}
+    
+    def addUser(self, user):
+        if user.username in self.users:
+            print("[SERVER] TRIED ADDING USER TO ROOM " + self.name_id + ", BUT USER[", (user.conn, user.addr), "] IS ALREADY IN THE ROOM.")
+            return False
+        else:
+            print("[SERVER] ADDED USER[", (user.conn, user.addr), "] TO ROOM " + self.name_id)
+            self.users[user.username] = user
+        return True
+
+    def removeUser(self, user):
+        print("[SERVER] REMOVED USER[", (user.conn, user.addr), "] FROM ROOM " + self.name_id)
+        self.users.pop(user.username, None)
+        return True
+
+    def sendToAll(self, msg):
+        pass        
 
 class User:
     def __init__(self, conn, addr, username=""):
@@ -20,6 +39,9 @@ class User:
             self.valid = True
         
         return self.valid
+
+    def __str__(self):
+        return "USER[" + str((self.conn, self.addr)) + "]"
 
     def send(self, msg):
         bytes_to_send = len(msg) 
@@ -57,10 +79,29 @@ class UsersManager:
 
 class RoomsManager:
     def __init__(self, init_room_count):
-        self.rooms = {str(room_number):Room(str(room_number)) for room_number in range(init_room_count)}
+        #Fix hardcoded values
+        self.default_names = ["General", "Manga/Anime", "Random"]
+        self.rooms = {self.default_names[room_number]:Room(str(room_number)) for room_number in range(init_room_count)}
 
     def comma_sep_room_names(self):
         return ",".join(self.rooms)
+
+    def addUser(self, user, room):
+        if not room in self.rooms:
+            print("[SERVER] TRIED ADDING " + user + " TO ROOM " + room + ", BUT IT DOES NOT EXIST")
+            return False
+        room = self.rooms[room]
+        room.addUser(user)
+        return True
+    
+    def removeUser(self, user, room):
+        if not room in self.rooms:
+            print("[SERVER] TRIED REMOVING " + user + " TO ROOM " + room + ", BUT IT DOES NOT EXIST")
+            return False
+        room = self.rooms[room]
+        room.removeUser(user)
+
+
 
 class ChatManager:
     def __init__(self, total_rooms):
@@ -88,5 +129,10 @@ class ChatManager:
                 print("[SERVER] VALIDATION UNSUCCESSFUL FOR USER", user.addr)
                 user.send(commands.INVALID_USERNAME)
                 raise errors.InvalidUsernameException
+        elif command.startsWith(commands.JOIN_ROOM):
+            pass
+        elif command.startsWith(commands.LEAVE_ROOM):
+            pass
+
 
 
