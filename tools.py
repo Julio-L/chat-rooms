@@ -13,12 +13,12 @@ class Room:
             print("[SERVER] TRIED ADDING USER TO ROOM " + self.name_id + ", BUT USER[", (user.conn, user.addr), "] IS ALREADY IN THE ROOM.")
             return False
         else:
-            print("[SERVER] ADDED USER[", (user.conn, user.addr), "] TO ROOM " + self.name_id)
+            print("[SERVER] ADDED USER[", str((user.conn, user.addr)), "] TO ROOM " + self.name_id)
             self.users[user.username] = user
         return True
 
     def removeUser(self, user):
-        print("[SERVER] REMOVED USER[", (user.conn, user.addr), "] FROM ROOM " + self.name_id)
+        print("[SERVER] REMOVED USER[", str((user.conn, user.addr)), "] FROM ROOM " + self.name_id)
         self.users.pop(user.username, None)
         return True
 
@@ -80,7 +80,7 @@ class UsersManager:
 class RoomsManager:
     def __init__(self, init_room_count):
         #Fix hardcoded values
-        self.default_names = ["General", "Manga/Anime", "Random"]
+        self.default_names = ["General", "Manga/Anime", "Demon men"]
         self.rooms = {self.default_names[room_number]:Room(str(room_number)) for room_number in range(init_room_count)}
 
     def comma_sep_room_names(self):
@@ -100,6 +100,7 @@ class RoomsManager:
             return False
         room = self.rooms[room]
         room.removeUser(user)
+        return True
 
 
 
@@ -129,10 +130,21 @@ class ChatManager:
                 print("[SERVER] VALIDATION UNSUCCESSFUL FOR USER", user.addr)
                 user.send(commands.INVALID_USERNAME)
                 raise errors.InvalidUsernameException
-        elif command.startsWith(commands.JOIN_ROOM):
-            pass
-        elif command.startsWith(commands.LEAVE_ROOM):
-            pass
+        elif command.startswith(commands.JOIN_ROOM):
+            print("[SERVER] TRYING TO JOIN ROOM")
+            room_name = command[len(commands.JOIN_ROOM)+1:]
+            successfull = self.roomsManager.addUser(user, room_name)
+            if successfull:
+                user.send(commands.JOINED + " " + room_name)
+            
+
+        elif command.startswith(commands.LEAVE_ROOM):
+            print("[SERVER] LEAVING ROOM")
+            room_name = command[len(commands.LEAVE_ROOM)+1:]
+            successfull = self.roomsManager.removeUser(user, room_name)
+            if successfull:
+                user.send(commands.SEND_ROOMS + " " + self.roomsManager.comma_sep_room_names())
+
 
 
 

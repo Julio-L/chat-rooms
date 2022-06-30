@@ -1,5 +1,4 @@
-from ctypes import alignment
-from pickle import encode_long
+
 from PyQt5.QtWidgets import QApplication, QFrame, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit
 from PyQt5.QtGui import QFont, QColor, QCursor
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -13,10 +12,11 @@ import commands
 class Window(Enum):
     INIT = 0
     MENU = 1
-    ROOM = 2
+    CHAT = 2
 
 class Worker(QThread):
     switch_to_menu = pyqtSignal()
+    switch_to_chat = pyqtSignal(str)
     update_rooms = pyqtSignal(str)
     def __init__(self, conn, addr, user):
         super().__init__()
@@ -51,6 +51,9 @@ class Worker(QThread):
             elif msg.startswith(commands.SEND_ROOMS):
                 room_names = msg[len(commands.SEND_ROOMS)+1:]
                 self.update_rooms.emit(room_names)
+            elif msg.startswith(commands.JOINED):
+                room_name = msg[len(commands.JOINED)+1:]
+                self.switch_to_chat.emit(room_name)
 
         print("[USER", self.addr, "] CONNECTION CLOSED.")
         self.conn.close()
@@ -63,8 +66,10 @@ class ChatState(QStackedWidget):
         self.user = User()
         self.init_window = InitWindow(self.onConnect)
         self.menu_window = MenuWindow(self)
+        self.chat_window = ChatWindow(self)
         self.addWidget(self.init_window)
         self.addWidget(self.menu_window)
+        self.addWidget(self.chat_window)
         self.setGeometry(100, 110, settings.WINDOWWIDTH, settings.WINDOWHEIGHT)
 
     def getUserName(self):
@@ -90,7 +95,12 @@ class ChatState(QStackedWidget):
         self.connection = Worker(client, ADDR, self.user)
         self.connection.switch_to_menu.connect(self.switch_to_menu)
         self.connection.update_rooms.connect(self.update_rooms)
+        self.connection.switch_to_chat.connect(self.switch_to_chat)
         self.connection.start()
+
+    def switch_to_chat(self, name):
+        self.chat_window.setRoomName(name)
+        self.switchTo(Window.CHAT.value)
 
     def update_rooms(self, rooms):
         print("[CLIENT-GUI] UPDATING ROOMS ...")
@@ -100,12 +110,20 @@ class ChatState(QStackedWidget):
         print("[CLIENT-GUI] SWITCHING TO MENU ...")
         if not self.menu_window.loaded:
             self.menu_window.load();
+        
         self.switchTo(Window.MENU.value)
 
 
     def clientSend(self, msg):
-        self.user.send(msg)
-        
+        self.user.sendMessage(msg)
+
+    def getSelectedRoom(self):
+        return self.menu_window.getSelectedRoom()
+
+    def attemptToConnectToRoom(self, room):
+        room_name = room.room_name
+        self.clientSend(commands.JOIN_ROOM + " " + room_name)
+    
 
     def switchTo(self, window):
         self.widget(window).prep()
@@ -169,12 +187,16 @@ class InitWindow(QWidget):
 
 
 class RoomDisplay(QScrollArea):
-    def __init__(self):
+    def __init__(self, chat_state):
         super().__init__()
         self.rooms = set()
         self.initUI()
         self.selected_room = None
+        self.chat_state = chat_state
         
+    
+    def getSelectedRoom(self):
+        return self.selected_room
     
     def initUI(self):
         self.widget = QFrame()
@@ -254,9 +276,10 @@ class RoomFactory:
 
 
 class RoomButtons(QWidget):
-    def __init__(self):
+    def __init__(self, chat_state):
         super().__init__()
         self.initUI()
+        self.chat_state = chat_state
     
     def initUI(self):
         self.layout = QHBoxLayout(self)
@@ -264,6 +287,19 @@ class RoomButtons(QWidget):
         self.create_room_btn = QPushButton("Create Room")
         self.layout.addWidget(self.connect_btn)
         self.layout.addWidget(self.create_room_btn)
+        self.connect_btn.clicked.connect(self.connectToRoom)
+    
+    def connectToRoom(self):
+        room = self.chat_state.getSelectedRoom()
+        if not room:
+            print("[CLIENT] NO ROOM IS SELECTED")
+            return False
+        
+        self.chat_state.attemptToConnectToRoom(room)
+        return True
+        
+
+
 
 class UsersOnline(QScrollArea):
     def __init__(self, init_user):
@@ -292,7 +328,7 @@ class UserCard(QFrame):
     def initUI(self):
         print("USERNAM CARD: " + self.user.name)
         self.label = QLabel("User: " + self.user.name + " (YOU)")
-        self.label.setStyleSheet('''color:white;''')
+        self.label.setStyleSheet('''border:none; color:white;''')
         self.layout = QHBoxLayout(self)
         self.layout.addStretch()
         self.layout.addWidget(self.label)
@@ -306,9 +342,12 @@ class MenuWindow(QWidget):
         self.layout = QGridLayout(self)
         self.loaded = False;
 
+    def getSelectedRoom(self):
+        return self.rooms_display.getSelectedRoom()
+
     def load(self):
-        self.room_controls = RoomButtons()
-        self.rooms_display = RoomDisplay()
+        self.room_controls = RoomButtons(self.chat_state)
+        self.rooms_display = RoomDisplay(self.chat_state)
         self.users_online = UsersOnline(self.chat_state.user)
         
         self.initUI()
@@ -337,7 +376,31 @@ class MenuWindow(QWidget):
         pass
 
 class ChatWindow(QWidget):
-    pass
+    def __init__(self, chat_state):
+        super().__init__()
+        self.chat_state = chat_state
+        self.initUI()
+
+    def prep(self):
+        pass
+    
+    def initUI(self):
+        self.layout = QGridLayout(self)
+        self.leave_btn = QPushButton("Leave")
+        self.leave_btn.clicked.connect(self.leaveRoom)
+        self.room_heading = QLabel()
+        self.layout.addWidget(self.leave_btn, 0, 0)
+        self.layout.addWidget(self.room_heading, 0, 1)
+
+    
+    def leaveRoom(self):
+        self.chat_state.clientSend(commands.LEAVE_ROOM + " " + self.room_name)
+        self.chat_state.switch_to_menu()
+
+    def setRoomName(self, name):
+        self.room_name = name
+        self.room_heading.setText(name)
+
     
 
 class User:
