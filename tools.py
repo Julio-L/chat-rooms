@@ -91,7 +91,7 @@ class UsersManager:
 class RoomsManager:
     def __init__(self, init_room_count):
         #Fix hardcoded values
-        self.default_names = ["General", "Manga/Anime", "Demon men"]
+        self.default_names = ["General", "Manga/Anime", "Random"]
         self.rooms = {self.default_names[room_number]:Room(str(room_number)) for room_number in range(init_room_count)}
 
     def comma_sep_room_names(self):
