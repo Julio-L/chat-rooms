@@ -18,6 +18,8 @@ class Worker(QThread):
     switch_to_menu = pyqtSignal()
     switch_to_chat = pyqtSignal(str)
     update_rooms = pyqtSignal(str)
+    update_total_users = pyqtSignal(list)
+
     def __init__(self, conn, addr, user):
         super().__init__()
         self.conn = conn
@@ -28,7 +30,7 @@ class Worker(QThread):
         connected=True
 
         #Validate Username from server
-        self.user.sendMessage(commands.VALIDATE_USERNAME + " " + self.user.name)
+        self.user.sendMessage(commands.VALIDATE_USERNAME + " " + self.user.name.strip())
         while connected:
             try:
                 bytes_to_read = self.user.recieve(settings.HEADER, False)
@@ -54,6 +56,9 @@ class Worker(QThread):
             elif msg.startswith(commands.JOINED):
                 room_name = msg[len(commands.JOINED)+1:]
                 self.switch_to_chat.emit(room_name)
+            elif msg.startswith(commands.ALL_USERS):
+                usernames = msg[len(commands.ALL_USERS) + 1:].split(",")
+                self.update_total_users.emit(usernames)
 
         print("[USER", self.addr, "] CONNECTION CLOSED.")
         self.conn.close()
@@ -99,7 +104,13 @@ class ChatState(QStackedWidget):
         self.connection.switch_to_menu.connect(self.switch_to_menu)
         self.connection.update_rooms.connect(self.update_rooms)
         self.connection.switch_to_chat.connect(self.switch_to_chat)
+        self.connection.update_total_users.connect(self.update_total_users)
         self.connection.start()
+
+    def update_total_users(self, usernames):
+        if(not self.menu_window.loaded):
+            self.menu_window.load()
+        self.menu_window.update_users(usernames)
 
     def switch_to_chat(self, name):
         self.chat_window.setRoomName(name)
@@ -320,12 +331,22 @@ class UsersOnline(QScrollArea):
     def __init__(self, init_user):
         super().__init__()
         self.init_user = init_user
-        self.init_user_card = UserCard(init_user)
+        self.init_user_card = UserCard(init_user.name, init=True)
+        self.other_usernames= set()
         self.initUI()
+        
+    
+    def update_users(self, usernames):
+        for username in usernames:
+            if not username:
+                continue
+            user_card = UserCard(username)
+            self.layout.addWidget(user_card)
+
     def initUI(self):
         self.setWidgetResizable(True)
         self.widget = QFrame()
-        self.widget.setStyleSheet('''background-color: rgb(0, 0, 0); border: 3px solid white; border-radius: 10px;''')
+        self.widget.setStyleSheet('''background-color: rgb(32, 32, 32); border: 3px solid white; border-radius: 10px;''')
         self.label = QLabel("Users Online")
         self.label.setStyleSheet('''border:None; color:white''')
         self.layout = QVBoxLayout(self.widget)
@@ -336,13 +357,16 @@ class UsersOnline(QScrollArea):
         self.setWidget(self.widget)
 
 class UserCard(QFrame):
-    def __init__(self, user):
+    def __init__(self, username, init=False):
         super().__init__()
-        self.user = user
+        self.username = username
+        self.init = init
+
         self.initUI()
     def initUI(self):
-        print("USERNAM CARD: " + self.user.name)
-        self.label = QLabel("User: " + self.user.name + " (YOU)")
+        print("USERNAM CARD: " + self.username)
+        self.setStyleSheet('''border:4px solid grey''')
+        self.label = QLabel("User: " + self.username + (" (YOU)" if self.init else "") )
         self.label.setStyleSheet('''border:none; color:white;''')
         self.layout = QHBoxLayout(self)
         self.layout.addStretch()
@@ -360,7 +384,11 @@ class MenuWindow(QWidget):
     def getSelectedRoom(self):
         return self.rooms_display.getSelectedRoom()
 
+    def update_users(self, usernames):
+        self.users_online.update_users(usernames)
+
     def load(self):
+        self.loaded = True
         self.room_controls = RoomButtons(self.chat_state)
         self.rooms_display = RoomDisplay(self.chat_state)
         self.users_online = UsersOnline(self.chat_state.user)
@@ -408,12 +436,20 @@ class ChatWindow(QWidget):
         self.leave_btn = QPushButton("Leave")
         self.leave_btn.clicked.connect(self.leaveRoom)
         self.room_heading = QLabel()
+        self.send_chat_btn = QPushButton("Send")
+
         self.layout.setContentsMargins(40, 40, 40, 40)
-        self.layout.addWidget(self.leave_btn, 0, 0, 1, 2)
+        self.layout.addWidget(self.leave_btn, 0, 1 ,1, 1)
         self.layout.addWidget(self.room_users, 1, 0, 11, 2)
-        # self.layout.addWidget(self.room_heading, 0, 5, 1, 3)
+        self.layout.addWidget(self.room_heading, 0, 0, 1, 1)
         self.layout.addWidget(self.display, 0, 4, 10, 4)
         self.layout.addWidget(self.chat_box, 10, 4, 2, 4)
+        self.layout.addWidget(self.send_chat_btn, 11, 7, 1, 1)
+
+        self.setAutoFillBackground(True)
+        p = self.palette()
+        p.setColor(self.backgroundRole(), Qt.black)
+        self.setPalette(p)
 
     
     def leaveRoom(self):
@@ -422,7 +458,7 @@ class ChatWindow(QWidget):
 
     def setRoomName(self, name):
         self.room_name = name
-        self.room_heading.setText(name)
+        self.room_heading.setText("Room: [" + name + "]")
 
     
 

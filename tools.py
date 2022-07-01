@@ -67,12 +67,23 @@ class UsersManager:
     def __init__(self):
         self.registered_users = {}
 
+    def usernames_format(self, exclude=None):
+        usernames = self.registered_users.keys()
+        if exclude:
+            usernames = filter(lambda u: u != exclude, usernames)
+
+        return ",".join(usernames)
+
+
     def isvalidname(self, name):
         self.valid = name not in self.registered_users
         return self.valid
     
     def addUser(self, user):
         self.registered_users[user.username] = user
+        for u in self.registered_users.values():
+            
+            u.send(commands.ALL_USERS + " " + self.usernames_format(exclude=u.username))
     
     def removeUser(self, user):
         self.registered_users.pop(user.username, None)
