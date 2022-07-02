@@ -19,6 +19,8 @@ class Worker(QThread):
     switch_to_chat = pyqtSignal(str)
     update_rooms = pyqtSignal(str)
     update_total_users = pyqtSignal(list)
+    user_connect = pyqtSignal(str)
+    user_disconnect = pyqtSignal(str)
 
     def __init__(self, conn, addr, user):
         super().__init__()
@@ -59,6 +61,12 @@ class Worker(QThread):
             elif msg.startswith(commands.ALL_USERS):
                 usernames = msg[len(commands.ALL_USERS) + 1:].split(",")
                 self.update_total_users.emit(usernames)
+            elif msg.startswith(commands.USER_CONNECT):
+                username = msg[len(commands.USER_CONNECT)+1:]
+                self.user_connect.emit(username)
+            elif msg.startswith(commands.USER_DISCONNECT):
+                username = msg[len(commands.USER_DISCONNECT)+1:]
+                self.user_disconnect.emit(username)
 
         print("[USER", self.addr, "] CONNECTION CLOSED.")
         self.conn.close()
@@ -105,12 +113,24 @@ class ChatState(QStackedWidget):
         self.connection.update_rooms.connect(self.update_rooms)
         self.connection.switch_to_chat.connect(self.switch_to_chat)
         self.connection.update_total_users.connect(self.update_total_users)
+        self.connection.user_connect.connect(self.connect_user)
+        self.connection.user_disconnect.connect(self.disconnect_user)
         self.connection.start()
+
+    def connect_user(self, username):
+        if(not self.menu_window.loaded):
+            self.menu_window.load()
+        self.menu_window.connect_user(username)
+
+    def disconnect_user(self, username):
+        if(not self.menu_window.loaded):
+            self.menu_window.load()
+        self.menu_window.disconnect_user(username)
 
     def update_total_users(self, usernames):
         if(not self.menu_window.loaded):
             self.menu_window.load()
-        self.menu_window.update_users(usernames)
+        self.menu_window.add_users(usernames)
 
     def switch_to_chat(self, name):
         self.chat_window.setRoomName(name)
@@ -210,14 +230,14 @@ class Display(QScrollArea):
     def initUI(self):
         print("INIY UI STARTED")
         self.widget = QFrame()
-        self.widget.setStyleSheet('''border: 3px solid white; border-radius: 10px''')
+        self.widget.setStyleSheet('''border: 3px solid white; border-radius: 10px; background-color:rgb(40, 49, 66)''')
         self.layout = QVBoxLayout(self.widget)
         self.setWidgetResizable(True)
         self.widget.setAutoFillBackground(True)
         p = self.widget.palette()
         p.setColor(self.backgroundRole(), QColor.fromRgb(32, 32, 32))
         self.widget.setPalette(p)
-        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setContentsMargins(2, 2, 2, 2)
         self.layout.setSpacing(0)
         self.layout.setAlignment(Qt.AlignTop)
         self.setWidget(self.widget)
@@ -229,6 +249,8 @@ class RoomDisplay(Display):
         self.rooms = set()
         self.selected_room = None
         self.chat_state = chat_state
+        self.layout.setSpacing(5)
+        self.layout.setContentsMargins(15, 15, 15, 15)
         print(self.layout, type(self.layout))
         
     
@@ -258,8 +280,6 @@ class RoomCard(QFrame):
         self.layout = QHBoxLayout(self)
         self.setCursor(QCursor(Qt.PointingHandCursor))
 
-        self.setStyleSheet('''
-        border: 2px solid grey; background-color:black; border-radius: 10px;''')
 
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.label = QLabel("Room: " + room_name)
@@ -273,26 +293,25 @@ class RoomCard(QFrame):
 
     def deselect(self):
         self.setStyleSheet('''
-        border: 3px solid grey; background-color:black; border-radius: 10px;''')
+        border: 3px solid rgb(57, 153, 111); background-color:black; border-radius: 3px;''')
 
  
     def select(self):
         self.setStyleSheet('''
-        border: 3px solid yellow; background-color:black; border-radius: 10px;''')
+        border: 3px solid yellow; background-color:black; border-radius: 3px;''')
 
 
     def setColor(self, color):
-        self.setAutoFillBackground(True)
-        p = self.palette()
-        p.setColor(self.backgroundRole(), color)
-        self.setPalette(p)
+        self.setStyleSheet(color)
 
 
 class RoomFactory:
     @staticmethod
     def buildRooms(rooms, display):
         res = []
-        color = [QColor(128, 128, 128), QColor(160, 160, 160)]
+        color = ['''
+        border: 2px solid rgb(3, 144, 252); background-color:black; border-radius: 3px;''', '''
+        border: 2px solid rgb(3, 144, 252); background-color:rgb(32,32,32); border-radius: 3px;''']
         pos = 0
         for room in rooms:
             res.append(RoomCard(room, color[pos], display))
@@ -310,7 +329,9 @@ class RoomButtons(QWidget):
     def initUI(self):
         self.layout = QHBoxLayout(self)
         self.connect_btn = QPushButton("Connect")
+        # self.connect_btn.setStyleSheet('''background-color: white;color:black;border: 3px solid grey''')
         self.create_room_btn = QPushButton("Create Room")
+        # self.create_room_btn.setStyleSheet('''background-color: white;color:black;border: 3px solid grey''')
         self.layout.addWidget(self.connect_btn)
         self.layout.addWidget(self.create_room_btn)
         self.connect_btn.clicked.connect(self.connectToRoom)
@@ -332,21 +353,46 @@ class UsersOnline(QScrollArea):
         super().__init__()
         self.init_user = init_user
         self.init_user_card = UserCard(init_user.name, init=True)
-        self.other_usernames= set()
+        self.other_usernames= {}
         self.initUI()
         
     
-    def update_users(self, usernames):
+    def add_users(self, usernames):
         for username in usernames:
             if not username:
                 continue
-            user_card = UserCard(username)
-            self.layout.addWidget(user_card)
+            user_card = None
+            if username in self.other_usernames:
+                user_card = self.other_usernames[username]
+            else:
+                user_card = UserCard(username)
+            self.other_usernames[username] = user_card
+        self.update_users()
+
+    def update_users(self):
+        for (username, card) in self.other_usernames.items():
+            card.setParent(None)
+        for (username, card) in self.other_usernames.items():
+            self.layout.addWidget(card)
+        
+    
+    def add_user(self, username):
+        user_card = UserCard(username)
+        self.other_usernames[username] = user_card
+        self.update_users()
+
+    def remove_user(self, username):
+        self.other_usernames[username].setParent(None)
+        self.other_usernames.pop(username, None)
+        print(self.other_usernames)
+        self.update_users()
+        
+
 
     def initUI(self):
         self.setWidgetResizable(True)
         self.widget = QFrame()
-        self.widget.setStyleSheet('''background-color: rgb(32, 32, 32); border: 3px solid white; border-radius: 10px;''')
+        self.widget.setStyleSheet('''background-color: rgb(40, 49, 66); border: 3px solid white; border-radius: 20px;''')
         self.label = QLabel("Users Online")
         self.label.setStyleSheet('''border:None; color:white''')
         self.layout = QVBoxLayout(self.widget)
@@ -365,7 +411,10 @@ class UserCard(QFrame):
         self.initUI()
     def initUI(self):
         print("USERNAM CARD: " + self.username)
-        self.setStyleSheet('''border:4px solid grey''')
+        # self.setStyleSheet('''border:2px solid rgb(57, 153, 111); background-color:black''')
+        self.setStyleSheet('''border:2px solid rgb(3, 144, 252); background-color:black''')
+ 
+
         self.label = QLabel("User: " + self.username + (" (YOU)" if self.init else "") )
         self.label.setStyleSheet('''border:none; color:white;''')
         self.layout = QHBoxLayout(self)
@@ -384,8 +433,14 @@ class MenuWindow(QWidget):
     def getSelectedRoom(self):
         return self.rooms_display.getSelectedRoom()
 
-    def update_users(self, usernames):
-        self.users_online.update_users(usernames)
+    def connect_user(self, username):
+        self.users_online.add_user(username)
+    
+    def disconnect_user(self, username):
+        self.users_online.remove_user(username)
+
+    def add_users(self, usernames):
+        self.users_online.add_users(usernames)
 
     def load(self):
         self.loaded = True
@@ -399,12 +454,12 @@ class MenuWindow(QWidget):
 
         self.layout.setContentsMargins(40, 40, 40, 40)
         self.heading= QLabel("[Rooms]")
-        self.heading.setStyleSheet('''border:None; font-size: 32px''')
+        self.heading.setStyleSheet('''border:None; font-size: 32px;''')
 
-        self.layout.addWidget(self.heading, 0, 2, 1, 1)
-        self.layout.addWidget(self.rooms_display, 1, 0, 4, 4)
-        self.layout.addWidget(self.room_controls, 6, 0, 1, 4)
-        self.layout.addWidget(self.users_online, 1, 6, 4, 2)
+        self.layout.addWidget(self.heading, 0, 3, 1, 2)
+        self.layout.addWidget(self.rooms_display, 1, 0, 4, 5)
+        self.layout.addWidget(self.room_controls, 5, 1, 1, 3)
+        self.layout.addWidget(self.users_online, 1, 5, 4, 2)
 
 
         self.setAutoFillBackground(True)

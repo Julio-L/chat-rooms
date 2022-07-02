@@ -74,6 +74,12 @@ class UsersManager:
 
         return ",".join(usernames)
 
+    def send_new_user(self, user):
+        username = user.username
+        for (other_username, other_user) in self.registered_users.items():
+            if other_username == username:
+                continue
+            other_user.send(commands.USER_CONNECT + " " + username)
 
     def isvalidname(self, name):
         self.valid = name not in self.registered_users
@@ -81,12 +87,21 @@ class UsersManager:
     
     def addUser(self, user):
         self.registered_users[user.username] = user
-        for u in self.registered_users.values():
-            
-            u.send(commands.ALL_USERS + " " + self.usernames_format(exclude=u.username))
+        for (username, u) in self.registered_users.items():
+            if username == user.username:
+                continue
+            u.send(commands.USER_CONNECT + " " + user.username)
+
+    def send_users(self, user):
+        usernames = self.usernames_format(exclude=user.username)
+        user.send(commands.ALL_USERS + " " + usernames)
+
     
     def removeUser(self, user):
         self.registered_users.pop(user.username, None)
+        for u in self.registered_users.values():
+            u.send(commands.USER_DISCONNECT + " " + user.username)
+
 
 class RoomsManager:
     def __init__(self, init_room_count):
@@ -127,6 +142,7 @@ class ChatManager:
             pass
         elif command.startswith(commands.DISCONNECT):
             self.usersManager.removeUser(user)
+        
             raise errors.DisconnectedException
         elif command.startswith(commands.VALIDATE_USERNAME):
             username = command[len(commands.VALIDATE_USERNAME)+1:]
@@ -137,6 +153,7 @@ class ChatManager:
                 self.usersManager.addUser(user)
                 user.send(commands.VALID_USERNAME)
                 user.send(commands.SEND_ROOMS + " " + self.roomsManager.comma_sep_room_names())
+                self.usersManager.send_users(user)
             else:
                 print("[SERVER] VALIDATION UNSUCCESSFUL FOR USER", user.addr)
                 user.send(commands.INVALID_USERNAME)
@@ -148,13 +165,12 @@ class ChatManager:
             if successfull:
                 user.send(commands.JOINED + " " + room_name)
             
-
         elif command.startswith(commands.LEAVE_ROOM):
             print("[SERVER] LEAVING ROOM")
             room_name = command[len(commands.LEAVE_ROOM)+1:]
             successfull = self.roomsManager.removeUser(user, room_name)
             if successfull:
-                user.send(commands.SEND_ROOMS + " " + self.roomsManager.comma_sep_room_names())
+                pass
 
 
 
