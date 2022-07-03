@@ -8,6 +8,9 @@ class Room:
         self.name_id = name_id
         self.users = {}
     
+    def usernames_format(self, exclude=None):
+        return ",".join([username for username in self.users if username != exclude])
+
     def addUser(self, user):
         if user.username in self.users:
             print("[SERVER] TRIED ADDING USER TO ROOM " + self.name_id + ", BUT USER[", (user.conn, user.addr), "] IS ALREADY IN THE ROOM.")
@@ -15,11 +18,20 @@ class Room:
         else:
             print("[SERVER] ADDED USER[", str((user.conn, user.addr)), "] TO ROOM " + self.name_id)
             self.users[user.username] = user
+        
+        for other_user in self.users.values():
+            if other_user == user:
+                continue
+            other_user.send(commands.USER_JOINED_ROOM + " " + user.username)
+        user.send(commands.JOINED + " " + self.name_id)
+        user.send(commands.ROOM_USERS + " " + self.usernames_format(exclude=user.username))
         return True
 
     def removeUser(self, user):
         print("[SERVER] REMOVED USER[", str((user.conn, user.addr)), "] FROM ROOM " + self.name_id)
         self.users.pop(user.username, None)
+        for other_user in self.users.values():
+            other_user.send(commands.USER_LEFT_ROOM + " " + user.username)
         return True
 
     def sendToAll(self, msg):
@@ -91,6 +103,7 @@ class UsersManager:
             if username == user.username:
                 continue
             u.send(commands.USER_CONNECT + " " + user.username)
+        
 
     def send_users(self, user):
         usernames = self.usernames_format(exclude=user.username)
@@ -107,7 +120,7 @@ class RoomsManager:
     def __init__(self, init_room_count):
         #Fix hardcoded values
         self.default_names = ["General", "Manga/Anime", "Random"]
-        self.rooms = {self.default_names[room_number]:Room(str(room_number)) for room_number in range(init_room_count)}
+        self.rooms = {self.default_names[room_number]:Room(self.default_names[room_number]) for room_number in range(init_room_count)}
 
     def comma_sep_room_names(self):
         return ",".join(self.rooms)
@@ -122,7 +135,7 @@ class RoomsManager:
     
     def removeUser(self, user, room):
         if not room in self.rooms:
-            print("[SERVER] TRIED REMOVING " + user + " TO ROOM " + room + ", BUT IT DOES NOT EXIST")
+            # print("[SERVER] TRIED REMOVING " + user + " TO ROOM " + room + ", BUT IT DOES NOT EXIST")
             return False
         room = self.rooms[room]
         room.removeUser(user)
@@ -162,8 +175,7 @@ class ChatManager:
             print("[SERVER] TRYING TO JOIN ROOM")
             room_name = command[len(commands.JOIN_ROOM)+1:]
             successfull = self.roomsManager.addUser(user, room_name)
-            if successfull:
-                user.send(commands.JOINED + " " + room_name)
+                
             
         elif command.startswith(commands.LEAVE_ROOM):
             print("[SERVER] LEAVING ROOM")

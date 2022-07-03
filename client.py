@@ -21,6 +21,9 @@ class Worker(QThread):
     update_total_users = pyqtSignal(list)
     user_connect = pyqtSignal(str)
     user_disconnect = pyqtSignal(str)
+    user_joined_room = pyqtSignal(str)
+    user_left_room = pyqtSignal(str)
+    update_room_users = pyqtSignal(list)
 
     def __init__(self, conn, addr, user):
         super().__init__()
@@ -67,6 +70,15 @@ class Worker(QThread):
             elif msg.startswith(commands.USER_DISCONNECT):
                 username = msg[len(commands.USER_DISCONNECT)+1:]
                 self.user_disconnect.emit(username)
+            elif msg.startswith(commands.USER_JOINED_ROOM):
+                username = msg[len(commands.USER_JOINED_ROOM) + 1:]
+                self.user_joined_room.emit(username)
+            elif msg.startswith(commands.USER_LEFT_ROOM):
+                username = msg[len(commands.USER_LEFT_ROOM) + 1:]
+                self.user_left_room.emit(username)
+            elif msg.startswith(commands.ROOM_USERS):
+                usernames = msg[len(commands.ROOM_USERS) + 1:].split(",")
+                self.update_room_users.emit(usernames)
 
         print("[USER", self.addr, "] CONNECTION CLOSED.")
         self.conn.close()
@@ -115,7 +127,20 @@ class ChatState(QStackedWidget):
         self.connection.update_total_users.connect(self.update_total_users)
         self.connection.user_connect.connect(self.connect_user)
         self.connection.user_disconnect.connect(self.disconnect_user)
+        self.connection.user_joined_room.connect(self.connect_user_room)
+        self.connection.user_left_room.connect(self.disconnect_user_room)
+        self.connection.update_room_users.connect(self.update_total_room_users)
+
         self.connection.start()
+
+    def connect_user_room(self, username):
+        self.chat_window.add_user(username)
+    
+    def disconnect_user_room(self, username):
+        self.chat_window.remove_user(username)
+    
+    def update_total_room_users(self, usernames):
+        self.chat_window.add_users(usernames)
 
     def connect_user(self, username):
         if(not self.menu_window.loaded):
@@ -386,6 +411,11 @@ class UsersOnline(QScrollArea):
         self.other_usernames.pop(username, None)
         print(self.other_usernames)
         self.update_users()
+
+    def clear_users(self):
+        for card in self.other_usernames.values():
+            card.setParent(None)
+        self.other_usernames = {}
         
 
 
@@ -481,6 +511,16 @@ class ChatWindow(QWidget):
         self.room_users = UsersOnline(self.chat_state.getUser())
         self.initUI()
 
+    
+    def add_user(self, username):
+        self.room_users.add_user(username)
+    
+    def add_users(self, usernames):
+        self.room_users.add_users(usernames)
+    
+    def remove_user(self, username):
+        self.room_users.remove_user(username)
+
     def prep(self):
         pass
     
@@ -509,6 +549,7 @@ class ChatWindow(QWidget):
     
     def leaveRoom(self):
         self.chat_state.clientSend(commands.LEAVE_ROOM + " " + self.room_name)
+        self.room_users.clear_users()
         self.chat_state.switch_to_menu()
 
     def setRoomName(self, name):
