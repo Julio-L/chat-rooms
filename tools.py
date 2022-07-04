@@ -8,6 +8,18 @@ class Room:
         self.name_id = name_id
         self.users = {}
     
+
+    def sendMessage(self, username, msg):
+        print("[USERS IN ROOM]")
+        print(self.users)
+        print(username)
+        print(msg)
+        for (un, user) in self.users.items():
+            if un == username:
+                continue
+            user.send(commands.CHAT_MESSAGE + " " + username + "," + self.name_id + "," + msg)
+
+
     def usernames_format(self, exclude=None):
         return ",".join([username for username in self.users if username != exclude])
 
@@ -122,6 +134,10 @@ class RoomsManager:
         self.default_names = ["General", "Manga/Anime", "Random"]
         self.rooms = {self.default_names[room_number]:Room(self.default_names[room_number]) for room_number in range(init_room_count)}
 
+    def sendMessage(self, username, room, msg):
+        room = self.rooms[room]
+        room.sendMessage(username, msg)
+
     def comma_sep_room_names(self):
         return ",".join(self.rooms)
 
@@ -151,9 +167,7 @@ class ChatManager:
     def exec_command(self, user, command):
         # if not user.valid:
         #     raise InvalidUsernameException
-        if command.startswith(commands.CHAT):
-            pass
-        elif command.startswith(commands.DISCONNECT):
+        if command.startswith(commands.DISCONNECT):
             self.usersManager.removeUser(user)
         
             raise errors.DisconnectedException
@@ -175,14 +189,21 @@ class ChatManager:
             print("[SERVER] TRYING TO JOIN ROOM")
             room_name = command[len(commands.JOIN_ROOM)+1:]
             successfull = self.roomsManager.addUser(user, room_name)
-                
-            
         elif command.startswith(commands.LEAVE_ROOM):
             print("[SERVER] LEAVING ROOM")
             room_name = command[len(commands.LEAVE_ROOM)+1:]
             successfull = self.roomsManager.removeUser(user, room_name)
             if successfull:
                 pass
+        elif command.startswith(commands.CHAT_MESSAGE):
+            print("here")
+            info = command[len(commands.CHAT_MESSAGE)+1:].split(",")
+            print(info)
+            username = info[0]
+            room = info[1]
+            msg = info[2]
+            self.roomsManager.sendMessage(username, room, msg)
+
 
 
 
