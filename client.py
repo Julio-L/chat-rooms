@@ -1,5 +1,5 @@
 
-from PyQt5.QtWidgets import QApplication, QFrame, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit, QTextEdit
+from PyQt5.QtWidgets import QMessageBox, QFrame, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit, QTextEdit
 from PyQt5.QtGui import QFont, QColor, QCursor
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from enum import Enum
@@ -15,6 +15,7 @@ class Window(Enum):
     CHAT = 2
 
 class Worker(QThread):
+    invalid_username = pyqtSignal(str)
     switch_to_menu = pyqtSignal()
     switch_to_chat = pyqtSignal(str)
     update_rooms = pyqtSignal(str)
@@ -52,6 +53,7 @@ class Worker(QThread):
             if msg.startswith(commands.INVALID_USERNAME):
                 connected = False
                 print("[USER", self.addr, "] USERNAME VALIDATION FAILED.")
+                self.invalid_username.emit(self.user.name.strip())
             elif msg.startswith(commands.VALID_USERNAME):
                 self.user.validated = True
                 self.switch_to_menu.emit()
@@ -63,7 +65,7 @@ class Worker(QThread):
                 room_name = msg[len(commands.JOINED)+1:]
                 self.switch_to_chat.emit(room_name)
             elif msg.startswith(commands.ALL_USERS):
-                usernames = msg[len(commands.ALL_USERS) + 1:].split(",")
+                usernames = msg[len(commands.ALL_USERS) + 1:].split(settings.split)
                 self.update_total_users.emit(usernames)
             elif msg.startswith(commands.USER_CONNECT):
                 username = msg[len(commands.USER_CONNECT)+1:]
@@ -78,16 +80,17 @@ class Worker(QThread):
                 username = msg[len(commands.USER_LEFT_ROOM) + 1:]
                 self.user_left_room.emit(username)
             elif msg.startswith(commands.ROOM_USERS):
-                usernames = msg[len(commands.ROOM_USERS) + 1:].split(",")
+                usernames = msg[len(commands.ROOM_USERS) + 1:].split(settings.split)
                 self.update_room_users.emit(usernames)
             elif msg.startswith(commands.CHAT_MESSAGE):
-                username_msg = msg[len(commands.CHAT_MESSAGE)+1:].split(",")
+                username_msg = msg[len(commands.CHAT_MESSAGE)+1:].split(settings.split)
                 self.chat_message.emit(username_msg)
 
 
         print("[USER", self.addr, "] CONNECTION CLOSED.")
         self.conn.close()
                 
+
 
 
 class ChatState(QStackedWidget):
@@ -97,6 +100,7 @@ class ChatState(QStackedWidget):
         self.init_window = InitWindow(self.onConnect)
         self.menu_window = MenuWindow(self)
         self.chat_window = ChatWindow(self)
+        self.init_error = QMessageBox()
         self.addWidget(self.init_window)
         self.addWidget(self.menu_window)
         self.addWidget(self.chat_window)
@@ -112,14 +116,24 @@ class ChatState(QStackedWidget):
         if self.user.conn:
             self.user.sendMessage(commands.DISCONNECT)
     
-    def onConnect(self):        
+    def onConnect(self):
+        username = self.init_window.user_input.text()
+        if len(username)>12 or len(username)<=0:
+            self.init_error.setText("Username must be between [1, 12] characters.")
+            self.init_error.exec()
+            return
+
         SERVER = socket.gethostbyname('localhost')
         ADDR = (SERVER, settings.PORT)
 
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(ADDR)
 
-        username = self.init_window.user_input.text()
+        try:
+            client.connect(ADDR)
+        except(ConnectionRefusedError):
+            self.server_is_down()
+            return
+
         self.user.name = username
 
         self.user.conn = client
@@ -136,8 +150,17 @@ class ChatState(QStackedWidget):
         self.connection.user_left_room.connect(self.disconnect_user_room)
         self.connection.update_room_users.connect(self.update_total_room_users)
         self.connection.chat_message.connect(self.addChatMessage)
+        self.connection.invalid_username.connect(self.invalid_username_error)
 
         self.connection.start()
+
+    def invalid_username_error(self, username):
+        self.init_error.setText("Username: " + username + " has been taken already.")
+        self.init_error.exec()
+
+    def server_is_down(self):
+        self.init_error.setText("Server is down. Please try again later.")
+        self.init_error.exec()
 
     def addChatMessage(self, username_room_msg):
         self.chat_window.addChatMessage(username_room_msg)
@@ -174,7 +197,7 @@ class ChatState(QStackedWidget):
         print("[CLIENT-GUI] UPDATING ROOMS ...")
         if(not self.menu_window.loaded):
             self.menu_window.load()
-        self.menu_window.update_rooms(rooms.split(","))
+        self.menu_window.update_rooms(rooms.split(settings.split))
 
     def switch_to_menu(self):
         print("[CLIENT-GUI] SWITCHING TO MENU ...")
@@ -323,6 +346,7 @@ class RoomCard(QFrame):
         self.display = display
         self.layout = QHBoxLayout(self)
         self.setCursor(QCursor(Qt.PointingHandCursor))
+        self.color = color
 
 
         self.layout.setContentsMargins(20, 20, 20, 20)
@@ -336,13 +360,12 @@ class RoomCard(QFrame):
         self.display.select_room(self)
 
     def deselect(self):
-        self.setStyleSheet('''
-        border: 3px solid rgb(57, 153, 111); background-color:black; border-radius: 3px;''')
+        self.setStyleSheet(self.color)
 
  
     def select(self):
         self.setStyleSheet('''
-        border: 3px solid yellow; background-color:black; border-radius: 3px;''')
+        border: 2px solid rgb(95,158,160); background-color:black; border-radius: 3px;''')
 
 
     def setColor(self, color):
@@ -355,7 +378,7 @@ class RoomFactory:
         res = []
         color = ['''
         border: 2px solid rgb(3, 144, 252); background-color:black; border-radius: 3px;''', '''
-        border: 2px solid rgb(3, 144, 252); background-color:rgb(32,32,32); border-radius: 3px;''']
+        border: 2px solid rgb(3, 144, 252); background-color:black; border-radius: 3px;''']
         pos = 0
         for room in rooms:
             res.append(RoomCard(room, color[pos], display))
@@ -547,7 +570,7 @@ class ChatWindow(QWidget):
         txt = self.chat_box.toPlainText()
         chat_card = ChatCard(self.chat_state.getUsername(), txt)
         self.display.addWidget(chat_card)
-        self.chat_state.clientSend(commands.CHAT_MESSAGE + " " + self.chat_state.getUsername() + "," + self.room_name +"," + txt)
+        self.chat_state.clientSend(commands.CHAT_MESSAGE + " " + self.chat_state.getUsername() + settings.split + self.room_name +settings.split + txt)
     
     def addMessage(self, username, msg):
         chat_card = ChatCard(username, msg)
@@ -609,16 +632,19 @@ class ChatCard(QFrame):
     def initUI(self):
         self.info_widget = QWidget()
         self.info_layout = QVBoxLayout(self.info_widget)
+        self.info_widget.setFixedWidth(110)
+
         self.content_layout = QHBoxLayout(self)
         self.text_label = QLabel(self.text)
-        self.username_label = QLabel(self.username)
+        self.username_label = QLabel(self.username.center(15))
         self.text_label.setWordWrap(True)
+
 
         self.content_layout.setAlignment(Qt.AlignLeft)
 
-        self.info_widget.setStyleSheet('''border:none; border-right:2px solid rgb(3, 144, 252); border-radius:8px''')
-        self.username_label.setStyleSheet('''border:none''')
-        self.text_label.setStyleSheet('''border:none''')
+        self.info_widget.setStyleSheet('''border:none; border-right:3px solid black; border-radius:6px''')
+        self.username_label.setStyleSheet('''border:none; color: white''')
+        self.text_label.setStyleSheet('''border:none; color:white''')
 
         self.info_layout.addWidget(self.username_label)
         self.info_layout.setAlignment(Qt.AlignCenter)

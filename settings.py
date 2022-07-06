@@ -3,3 +3,4 @@ FORMAT = "UTF-8"
 PORT = 5000
 WINDOWWIDTH = 1200
 WINDOWHEIGHT = 750
+split = "%%%%%%%"

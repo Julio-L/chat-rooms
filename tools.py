@@ -17,11 +17,11 @@ class Room:
         for (un, user) in self.users.items():
             if un == username:
                 continue
-            user.send(commands.CHAT_MESSAGE + " " + username + "," + self.name_id + "," + msg)
+            user.send(commands.CHAT_MESSAGE + " " + username + settings.split + self.name_id + settings.split + msg)
 
 
     def usernames_format(self, exclude=None):
-        return ",".join([username for username in self.users if username != exclude])
+        return settings.split.join([username for username in self.users if username != exclude])
 
     def addUser(self, user):
         if user.username in self.users:
@@ -96,7 +96,7 @@ class UsersManager:
         if exclude:
             usernames = filter(lambda u: u != exclude, usernames)
 
-        return ",".join(usernames)
+        return settings.split.join(usernames)
 
     def send_new_user(self, user):
         username = user.username
@@ -139,7 +139,7 @@ class RoomsManager:
         room.sendMessage(username, msg)
 
     def comma_sep_room_names(self):
-        return ",".join(self.rooms)
+        return settings.split.join(self.rooms)
 
     def addUser(self, user, room):
         if not room in self.rooms:
@@ -197,7 +197,7 @@ class ChatManager:
                 pass
         elif command.startswith(commands.CHAT_MESSAGE):
             print("here")
-            info = command[len(commands.CHAT_MESSAGE)+1:].split(",")
+            info = command[len(commands.CHAT_MESSAGE)+1:].split(settings.split)
             print(info)
             username = info[0]
             room = info[1]
