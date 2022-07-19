@@ -31,6 +31,7 @@ class Room:
             print("[SERVER] ADDED USER[", str((user.conn, user.addr)), "] TO ROOM " + self.name_id)
             self.users[user.username] = user
         
+        user.room = self.name_id
         for other_user in self.users.values():
             if other_user == user:
                 continue
@@ -50,12 +51,14 @@ class Room:
         pass        
 
 class User:
-    def __init__(self, conn, addr, username=""):
+    def __init__(self, conn, addr, chat_manager, username="", connected = False):
+        self.chat_manager = chat_manager
         self.username = username
         self.valid = False
         self.conn = conn
         self.addr = addr
         self.room = None
+        self.connected=connected
     
     def validate(self, usersManager):
         print("[SERVER] VALIDATING USER", self.addr)
@@ -68,16 +71,22 @@ class User:
         return "USER[" + str((self.conn, self.addr)) + "]"
 
     def send(self, msg):
-        bytes_to_send = len(msg) 
-        self.conn.send(bytes_to_send.to_bytes(8, "little"))
-        print("[SERVER -> USER:'", self.addr, "'] HAS SENT '", bytes_to_send, "' BYTES AS A HEADER.")
-        self.conn.send(msg.encode(settings.FORMAT))
-        print("[SERVER -> USER:'", self.addr, "'] HAS SENT '", msg, "'.")
+        try:
+            bytes_to_send = len(msg) 
+            self.conn.send(bytes_to_send.to_bytes(8, "little"))
+            print("[SERVER -> USER:'", self.addr, "'] HAS SENT '", bytes_to_send, "' BYTES AS A HEADER.")
+            self.conn.send(msg.encode(settings.FORMAT))
+            print("[SERVER -> USER:'", self.addr, "'] HAS SENT '", msg, "'.")
+        except(Exception):
+            if self.room:
+                self.chat_manager.roomsManager.removeUser(self, self.room)
+            self.chat_manager.usersManager.removeUser(self)
+            self.connected=False
     
     
     def recieve(self,bytes_to_read, decode=False):
         if not decode:
-            print("[USER:'",self.addr   ,"' -> SERVER] RECIEVED '", bytes_to_read,"' BYTES AS A HEADER." )
+            print("[USER:'",self.addr   ,"' -> SERVER] RECIEVED '", bytes_to_read,"' BYTES AS A HEADER!!!!" )
             res = int.from_bytes(self.conn.recv(bytes_to_read), "little")
             return res
 
@@ -88,8 +97,9 @@ class User:
 
 
 class UsersManager:
-    def __init__(self):
+    def __init__(self, chat_manager):
         self.registered_users = {}
+        self.chat_manager = chat_manager
 
     def usernames_format(self, exclude=None):
         usernames = self.registered_users.keys()
@@ -121,7 +131,10 @@ class UsersManager:
         usernames = self.usernames_format(exclude=user.username)
         user.send(commands.ALL_USERS + " " + usernames)
 
-    
+    def send_msg_to_all(self, msg):
+        for username, user in self.registered_users.items():
+            user.send(msg)
+
     def removeUser(self, user):
         self.registered_users.pop(user.username, None)
         for u in self.registered_users.values():
@@ -129,11 +142,17 @@ class UsersManager:
 
 
 class RoomsManager:
-    def __init__(self, init_room_count):
+    def __init__(self, init_room_count, chat_manager):
+        self.chat_manager = chat_manager
         #Fix hardcoded values
         self.default_names = ["General", "Manga/Anime", "Random"]
         self.rooms = {self.default_names[room_number]:Room(self.default_names[room_number]) for room_number in range(init_room_count)}
 
+    def addRoom(self, roomname):
+        if roomname in self.rooms:
+            return -1
+        self.rooms[roomname] = Room(roomname)
+        
     def sendMessage(self, username, room, msg):
         room = self.rooms[room]
         room.sendMessage(username, msg)
@@ -161,21 +180,22 @@ class RoomsManager:
 
 class ChatManager:
     def __init__(self, total_rooms):
-        self.usersManager = UsersManager()
-        self.roomsManager = RoomsManager(total_rooms)
+        self.usersManager = UsersManager(self)
+        self.roomsManager = RoomsManager(total_rooms, self)
         
     def exec_command(self, user, command):
         # if not user.valid:
         #     raise InvalidUsernameException
         if command.startswith(commands.DISCONNECT):
+            if user.room:
+                self.roomsManager.removeUser(user, user.room)
             self.usersManager.removeUser(user)
-        
-            raise errors.DisconnectedException
         elif command.startswith(commands.VALIDATE_USERNAME):
             username = command[len(commands.VALIDATE_USERNAME)+1:]
             user.username = username
             valid = user.validate(self.usersManager)
             if valid:
+                user.connected = True
                 print("[SERVER] VALIDATION SUCCESSFUL FOR USER", user.addr)
                 self.usersManager.addUser(user)
                 user.send(commands.VALID_USERNAME)
@@ -203,7 +223,15 @@ class ChatManager:
             room = info[1]
             msg = info[2]
             self.roomsManager.sendMessage(username, room, msg)
-
+        elif command.startswith(commands.CREATE_ROOM):
+            roomname = command[len(commands.CREATE_ROOM) + 1:]
+            res = self.roomsManager.addRoom(roomname)
+            if res != -1:
+                msg = commands.SEND_ROOMS + " " + self.roomsManager.comma_sep_room_names()
+                self.usersManager.send_msg_to_all(msg)
+                user.send(commands.ROOM_CREATED)
+            else:
+                user.send(commands.ROOM_FAILED)
 
 
 

@@ -13,26 +13,31 @@ server.bind(ADDR)
 
 def handle_client(chatManager, conn, addr):
     print("[NEW CONNECTION]", addr, " connected.")
-    user = tools.User(conn, addr)
+    user = tools.User(conn, addr, chatManager)
     connected = True
 
     while connected:
         bytes_to_read = user.recieve(settings.HEADER, False)
+        print(bytes_to_read)
         if bytes_to_read == 0:
-            continue
+            connected = False
+            chatManager.exec_command(user, commands.DISCONNECT)
+            break
         
         print("[USER", addr, "] has sent", bytes_to_read, " bytes")
-
         command = user.recieve(bytes_to_read, decode=True)
 
         try:
             print("[SERVER] EXECUTING COMMANS: '", command, "' FOR USER", user.addr)
             chatManager.exec_command(user, command)
-        except (errors.InvalidUsernameException, errors.DisconnectedException):
+        except (Exception, errors.InvalidUsernameException, errors.DisconnectedException):
             print("[USER", addr, "] DISCONNECTED.")
             connected = False
+        
+        if not user.connected:
+            connected = False
+            continue
             
-
 
 def start():
     server.listen()

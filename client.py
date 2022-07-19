@@ -1,9 +1,8 @@
 
-from PyQt5.QtWidgets import QMessageBox, QFrame, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit, QTextEdit
+from PyQt5.QtWidgets import QMessageBox, QFormLayout, QFrame, QScrollArea, QGridLayout, QStackedWidget, QWidget, QHBoxLayout, QPushButton, QVBoxLayout, QLabel, QLineEdit, QTextEdit
 from PyQt5.QtGui import QFont, QColor, QCursor
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from enum import Enum
-from threading import Thread
 import socket
 import settings
 import errors
@@ -26,6 +25,8 @@ class Worker(QThread):
     user_left_room = pyqtSignal(str)
     update_room_users = pyqtSignal(list)
     chat_message=pyqtSignal(list)
+    room_created = pyqtSignal()
+    room_failed = pyqtSignal()
 
     def __init__(self, conn, addr, user):
         super().__init__()
@@ -85,6 +86,10 @@ class Worker(QThread):
             elif msg.startswith(commands.CHAT_MESSAGE):
                 username_msg = msg[len(commands.CHAT_MESSAGE)+1:].split(settings.split)
                 self.chat_message.emit(username_msg)
+            elif msg.startswith(commands.ROOM_CREATED):
+                self.room_created.emit()
+            elif msg.startswith(commands.ROOM_FAILED):
+                self.room_failed.emit()
 
 
         print("[USER", self.addr, "] CONNECTION CLOSED.")
@@ -113,8 +118,9 @@ class ChatState(QStackedWidget):
         return self.user
 
     def closeEvent(self, event):
-        if self.user.conn:
-            self.user.sendMessage(commands.DISCONNECT)
+        pass
+        # if self.user.conn:
+        #     self.user.sendMessage(commands.DISCONNECT)
     
     def onConnect(self):
         username = self.init_window.user_input.text()
@@ -223,7 +229,7 @@ class ChatState(QStackedWidget):
         self.setCurrentIndex(window)
         
 
-class InitWindow(QWidget):
+class InitWindow(QFrame):
     def __init__(self, onConnect):
         super().__init__()
         self.onConnect=onConnect
@@ -233,10 +239,11 @@ class InitWindow(QWidget):
         pass
 
     def initUI(self):
-        self.setAutoFillBackground(True)
-        p = self.palette()
-        p.setColor(self.backgroundRole(), Qt.black)
-        self.setPalette(p)
+        # self.setAutoFillBackground(True)
+        # p = self.palette()
+        # p.setColor(self.backgroundRole(), Qt.black)
+        # self.setPalette(p)
+        self.setStyleSheet('''background-color: #B0C4DE; color:black''')
         self.layout = QVBoxLayout(self)
         self.label = QLabel("Username: ")
         self.user_input = QLineEdit()
@@ -249,10 +256,12 @@ class InitWindow(QWidget):
         self.input_section.setFixedWidth(420)
         
         self.connect_button = QPushButton("Connect")
+        self.connect_button.setStyleSheet('''background-color:#F0F8FF;color:black''')
         self.connect_button.clicked.connect(self.onConnect)
         self.connect_button.setFixedWidth(100)
         self.user_input.setFixedWidth(200)
         self.input_layout.addWidget(self.connect_button)
+        self.user_input.setStyleSheet('''background-color:white''')
 
 
         self.heading_section = QWidget()
@@ -287,8 +296,8 @@ class Display(QScrollArea):
     def initUI(self):
         print("INIY UI STARTED")
         self.widget = QFrame()
-        self.setStyleSheet('''border: 3px solid white; border-radius: 20px; background-color:rgb(40, 49, 66)''')
-        self.widget.setStyleSheet('''border:none''')
+        self.setStyleSheet('''border: none; border-radius: 20px; background-color:#F0F8FF;color:black;''')
+        self.widget.setStyleSheet('''border: 3px solid black; border-radius: 20px;''')
         self.layout = QVBoxLayout(self.widget)
         self.setWidgetResizable(True)
         self.widget.setAutoFillBackground(True)
@@ -330,11 +339,15 @@ class RoomDisplay(Display):
             self.selected_room.deselect()
         self.selected_room = room
         room.select();
+    
 
     def update_rooms(self, rooms):
+        self.clearWidgets()
         self.room_cards = RoomFactory.buildRooms(rooms, self)
         for i, card in enumerate(self.room_cards):
             self.layout.addWidget(card)
+            self.rooms.add(card)
+
 
 
 
@@ -365,7 +378,7 @@ class RoomCard(QFrame):
  
     def select(self):
         self.setStyleSheet('''
-        border: 2px solid rgb(95,158,160); background-color:black; border-radius: 3px;''')
+        border: 3px solid #3457D5; background-color:#B9D9EB; border-radius: 8px;color:black''')
 
 
     def setColor(self, color):
@@ -377,8 +390,8 @@ class RoomFactory:
     def buildRooms(rooms, display):
         res = []
         color = ['''
-        border: 2px solid rgb(3, 144, 252); background-color:black; border-radius: 3px;''', '''
-        border: 2px solid rgb(3, 144, 252); background-color:black; border-radius: 3px;''']
+        border: 3px solid black; color:black; background-color:#B9D9EB; border-radius: 8px;''', '''
+        border: 3px solid black; color:black;background-color:#B9D9EB; border-radius: 8px;''']
         pos = 0
         for room in rooms:
             res.append(RoomCard(room, color[pos], display))
@@ -394,14 +407,33 @@ class RoomButtons(QWidget):
         self.chat_state = chat_state
     
     def initUI(self):
+        self.create_window = QFrame()
+        self.create_layout = QFormLayout(self.create_window)
+        self.create_label = QLabel("Create Room with name:")
+        self.create_input = QLineEdit()
+        self.create_btn = QPushButton("Create")
+        self.create_layout.addRow(self.create_label, self.create_input)
+        self.create_layout.addRow(self.create_btn)
+
         self.layout = QHBoxLayout(self)
         self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setStyleSheet('''background-color:#F0F8FF; color:black''')
         # self.connect_btn.setStyleSheet('''background-color: white;color:black;border: 3px solid grey''')
         self.create_room_btn = QPushButton("Create Room")
+        self.create_room_btn.setStyleSheet('''background-color:#F0F8FF;color:black''')
         # self.create_room_btn.setStyleSheet('''background-color: white;color:black;border: 3px solid grey''')
         self.layout.addWidget(self.connect_btn)
         self.layout.addWidget(self.create_room_btn)
         self.connect_btn.clicked.connect(self.connectToRoom)
+        self.create_room_btn.clicked.connect(self.open_create_window)
+        self.create_btn.clicked.connect(self.submit_room)
+    
+    def submit_room(self):
+        self.chat_state.clientSend(commands.CREATE_ROOM + " " + self.create_input.text())
+
+    def open_create_window(self):
+        self.create_window.show()
+        
     
     def connectToRoom(self):
         room = self.chat_state.getSelectedRoom()
@@ -464,10 +496,10 @@ class UsersOnline(QScrollArea):
     def initUI(self):
         self.setWidgetResizable(True)
         self.widget = QFrame()
-        self.setStyleSheet('''background-color: rgb(40, 49, 66); border: 3px solid white; border-radius: 20px;''')
+        self.setStyleSheet('''background-color:#F0F8FF; border: 3px solid black; border-radius: 20px;''')
         self.widget.setStyleSheet('''border:none''')
         self.label = QLabel("Users Online")
-        self.label.setStyleSheet('''border:None; color:white''')
+        self.label.setStyleSheet('''border:none; color:black''')
         self.layout = QVBoxLayout(self.widget)
         self.layout.setAlignment(Qt.AlignCenter | Qt.AlignTop)
         self.layout.addWidget(self.label)
@@ -485,11 +517,12 @@ class UserCard(QFrame):
     def initUI(self):
         print("USERNAM CARD: " + self.username)
         # self.setStyleSheet('''border:2px solid rgb(57, 153, 111); background-color:black''')
-        self.setStyleSheet('''border:2px solid rgb(3, 144, 252); background-color:black''')
+        # self.setStyleSheet('''border:2px solid rgb(3, 144, 252); background-color:black''')
+        self.setStyleSheet('''border:2px solid black; background-color:#B9D9EB; color:black''')
  
 
         self.label = QLabel("User: " + self.username + (" (YOU)" if self.init else "") )
-        self.label.setStyleSheet('''border:none; color:white;''')
+        self.label.setStyleSheet('''border:none; color:black;''')
         self.layout = QHBoxLayout(self)
         self.layout.addStretch()
         self.label.setAlignment(Qt.AlignLeft)
@@ -504,7 +537,7 @@ class UserCard(QFrame):
 
 
 
-class MenuWindow(QWidget):
+class MenuWindow(QFrame):
     def __init__(self, chat_state):
         super().__init__()
         self.chat_state = chat_state
@@ -532,10 +565,10 @@ class MenuWindow(QWidget):
         self.initUI()
 
     def initUI(self):
-
+        self.setStyleSheet('''background-color:	#B0C4DE''')
         self.layout.setContentsMargins(40, 40, 40, 40)
         self.heading= QLabel("[Rooms]")
-        self.heading.setStyleSheet('''border:None; font-size: 32px;''')
+        self.heading.setStyleSheet('''border:None; font-size: 32px; color:black''')
 
         self.layout.addWidget(self.heading, 0, 3, 1, 2)
         self.layout.addWidget(self.rooms_display, 1, 0, 4, 5)
@@ -554,7 +587,7 @@ class MenuWindow(QWidget):
     def prep(self):
         pass
 
-class ChatWindow(QWidget):
+class ChatWindow(QFrame):
     def __init__(self, chat_state):
         super().__init__()
         self.chat_state = chat_state
@@ -590,13 +623,17 @@ class ChatWindow(QWidget):
         self.room_users.init_user_card.setUsername(self.chat_state.getUsername(), this=True)
     
     def initUI(self):
+        self.setStyleSheet('''background-color:#B0C4DE;''')
         self.layout = QGridLayout(self)
         self.chat_box = QTextEdit()
-        self.chat_box.setStyleSheet('''border:2px solid white; background-color:black; border-radius: 10px''')
+        self.chat_box.setStyleSheet('''background-color:#F0F8FF;border:2px solid black;color:black''')
         self.leave_btn = QPushButton("Leave")
+        self.leave_btn.setStyleSheet('''background-color:#F0F8FF;color:black;border:2px solid black''')
         self.leave_btn.clicked.connect(self.leaveRoom)
         self.room_heading = QLabel()
+        self.room_heading.setStyleSheet('''color:black''')
         self.send_chat_btn = QPushButton("Send")
+        self.send_chat_btn.setStyleSheet('''color:black; background-color:#F0F8FF''')
 
         self.send_chat_btn.clicked.connect(self.sendMessage)
         self.layout.setContentsMargins(40, 40, 40, 40)
@@ -605,12 +642,8 @@ class ChatWindow(QWidget):
         self.layout.addWidget(self.room_heading, 0, 0, 1, 1)
         self.layout.addWidget(self.display, 0, 4, 10, 4)
         self.layout.addWidget(self.chat_box, 10, 4, 2, 4)
-        self.layout.addWidget(self.send_chat_btn, 11, 7, 1, 1)
+        self.layout.addWidget(self.send_chat_btn, 12, 5, 1, 2)
 
-        self.setAutoFillBackground(True)
-        p = self.palette()
-        p.setColor(self.backgroundRole(), Qt.black)
-        self.setPalette(p)
 
     
     def leaveRoom(self):
@@ -643,8 +676,8 @@ class ChatCard(QFrame):
         self.content_layout.setAlignment(Qt.AlignLeft)
 
         self.info_widget.setStyleSheet('''border:none; border-right:3px solid black; border-radius:6px''')
-        self.username_label.setStyleSheet('''border:none; color: white''')
-        self.text_label.setStyleSheet('''border:none; color:white''')
+        self.username_label.setStyleSheet('''border:none; color: black''')
+        self.text_label.setStyleSheet('''border:none; color:black''')
 
         self.info_layout.addWidget(self.username_label)
         self.info_layout.setAlignment(Qt.AlignCenter)

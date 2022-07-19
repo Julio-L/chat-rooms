@@ -6,3 +6,6 @@ class DisconnectedException(Exception):
 
 class ConnectionLostException(Exception):
     pass
+
+class DuplicateRoomException(Exception):
+    pass
